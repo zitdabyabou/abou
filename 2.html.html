@@ -1,0 +1,378 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>글책쓰기 | ZITDA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body class="bg-gray-50 font-sans h-screen">
+  <div class="flex h-full">
+    <!-- 좌측: 목차 -->
+    <aside class="w-1/3 bg-orange-50 border-r p-6 flex flex-col justify-between">
+      <div>
+        <h2 class="text-lg font-semibold text-orange-600 mb-4">목차</h2>
+        <ul id="titleList" class="space-y-2 text-sm text-gray-800 overflow-y-auto max-h-[70vh]"></ul>
+      </div>
+      <div class="space-y-2 pt-4 border-t mt-4">
+        <button onclick="addNewTableOfContents()" class="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600">저장하기</button>
+        <button onclick="saveDraft()" class="w-full px-4 py-2 border border-orange-400 text-orange-600 rounded hover:bg-orange-50">임시 저장</button>
+        <button onclick="clearEditor()" class="w-full px-4 py-2 border text-gray-600 rounded hover:bg-gray-50">새로 쓰기</button>
+<button onclick="downloadAsDocx()" class="w-full px-4 py-2 border bg-white text-blue-700 rounded hover:bg-blue-100">📄 전체 Word 저장</button>
+        <button onclick="downloadFullEPUB()" class="w-full px-4 py-2 border bg-white text-purple-700 rounded hover:bg-purple-100">📘 전체 EPUB 저장</button>
+      </div>
+    </aside>
+
+    <!-- 우측: 글 작성 + AI -->
+    <main class="flex-1 p-8 overflow-auto bg-white flex flex-col justify-between">
+      <div>
+        <div class="flex justify-between mb-4 text-sm text-gray-600 border-b pb-4">
+          <div>
+            <p><strong>글자 수:</strong> <span id="charCount" class="text-orange-600">0자</span></p>
+            <p><strong>문단 수:</strong> <span id="paraCount" class="text-orange-600">0문단</span></p>
+          </div>
+          <div><p>형식: 자유형</p></div>
+        </div>
+        <input id="title" type="text" placeholder="제목을 입력하세요." class="w-full text-2xl font-bold border-b pb-2 mb-4 focus:outline-none focus:border-orange-500">
+        <textarea id="editor" rows="10" placeholder="여기에 글을 쓰세요." class="w-full border rounded p-4 mb-4 resize-none focus:ring-2 focus:ring-orange-300"></textarea>
+      </div>
+
+      <!-- AI 도우미 하단 30% -->
+      <div class="border-t pt-4 mt-4">
+        <p class="text-orange-600 font-semibold mb-2">🧠 AI 글쓰기 도우미</p>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button onclick="runAI('아이디어')" class="px-4 py-2 bg-orange-100 text-orange-700 rounded hover:bg-orange-200">💡 아이디어 피드백</button>
+          <button onclick="runAI('주제')" class="px-4 py-2 bg-orange-100 text-orange-700 rounded hover:bg-orange-200">🎯 주제 확장</button>
+          <button onclick="runAI('맞춤법')" class="px-4 py-2 bg-orange-100 text-orange-700 rounded hover:bg-orange-200">✍️ 맞춤법 검사</button>
+          <button onclick="runAI('문제점')" class="px-4 py-2 bg-orange-100 text-orange-700 rounded hover:bg-orange-200">🧐 문제점 분석</button>
+        </div>
+        <div id="aiOutput" class="p-4 bg-gray-100 rounded text-sm text-gray-800 whitespace-pre-wrap h-40 overflow-y-auto"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const title = document.getElementById('title');
+    const editor = document.getElementById('editor');
+    const charCount = document.getElementById('charCount');
+    const paraCount = document.getElementById('paraCount');
+
+    function updateCounts() {
+      const text = editor.value;
+      charCount.textContent = text.replace(/\s/g, '').length + '자';
+      paraCount.textContent = text.split(/\n+/).filter(p => p.trim() !== '').length + '문단';
+    }
+    editor.addEventListener('input', updateCounts);
+
+    function collectFormData() {
+      return {
+        title: title.value,
+        content: editor.value,
+      };
+    }
+
+    function saveDraft() {
+      localStorage.setItem("draft", JSON.stringify(collectFormData()));
+      alert("임시 저장 완료!");
+    }
+
+    function clearEditor() {
+      title.value = "";
+      editor.value = "";
+      updateCounts();
+    }
+
+    function addNewTableOfContents() {
+      const data = collectFormData();
+      if (!data.title || !data.content) {
+        alert("제목과 내용을 입력해주세요.");
+        return;
+      }
+      const arr = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+      arr.push(data);
+      localStorage.setItem("savedTitles", JSON.stringify(arr));
+      updateTitleList();
+      clearEditor();
+    }
+
+    function updateTitleList() {
+      const list = document.getElementById("titleList");
+      const arr = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+      list.innerHTML = "";
+      arr.forEach((item, idx) => {
+        const li = document.createElement("li");
+        li.classList.add("border", "rounded", "px-3", "py-2", "bg-white", "shadow-sm", "cursor-pointer", "hover:bg-orange-50");
+        li.textContent = item.title;
+li.onclick = () => showPopup(item.title, item.content, idx);
+
+        list.appendChild(li);
+      });
+    }
+
+function showPopup(title, content, index) {
+  const popup = document.createElement("div");
+  popup.classList.add("fixed", "top-0", "left-0", "w-full", "h-full", "bg-black", "bg-opacity-40", "flex", "items-center", "justify-center", "z-50");
+
+  popup.innerHTML = `
+    <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      <h2 class="text-xl font-bold mb-4">${title}</h2>
+      <textarea id="popupEditor" class="w-full border rounded p-4 h-64 resize-y mb-4">${content}</textarea>
+      <div class="flex justify-end gap-2 flex-wrap">
+        <button onclick="savePopupEdit(${index})" class="bg-green-100 text-green-700 px-4 py-2 rounded hover:bg-green-200">💾 저장</button>
+        <button onclick="deleteEntry(${index}); this.closest('.fixed').remove();" class="bg-red-100 text-red-700 px-4 py-2 rounded hover:bg-red-200">🗑 삭제</button>
+        <button onclick="downloadSingleEPUB('${title}', document.getElementById('popupEditor').value)" class="bg-purple-100 text-purple-700 px-4 py-2 rounded hover:bg-purple-200">📘 EPUB 저장</button>
+        <button onclick="this.closest('.fixed').remove()" class="px-4 py-2 border rounded hover:bg-gray-100">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(popup);
+}
+function savePopupEdit(index) {
+  const data = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+  const newContent = document.getElementById("popupEditor").value;
+  if (data[index]) {
+    data[index].content = newContent;
+    localStorage.setItem("savedTitles", JSON.stringify(data));
+    alert("수정이 저장되었습니다.");
+    document.querySelector(".fixed").remove(); // 팝업 닫기
+    updateTitleList(); // 갱신
+  }
+}
+
+function downloadSingleEPUB(title, content) {
+  const zip = new JSZip();
+
+  // 1. 반드시 첫 번째로 mimetype 파일 (압축X)
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+
+  // 2. META-INF 구조
+  zip.folder("META-INF").file("container.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0"
+  xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf"
+              media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`);
+
+  // 3. XHTML 본문 파일
+  const formattedContent = content
+    .split(/\\r?\\n+/)
+    .map(line => `<p>${line.trim()}</p>`)
+    .join("\\n");
+
+  zip.folder("OEBPS").file("chapter1.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${formattedContent}
+</body>
+</html>`);
+
+  // 4. content.opf 구성
+  zip.folder("OEBPS").file("content.opf", `<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0"
+         xmlns="http://www.idpf.org/2007/opf"
+         unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>${title}</dc:title>
+    <dc:language>ko</dc:language>
+    <dc:identifier id="bookid">id-${Date.now()}</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="chap1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chap1"/>
+  </spine>
+</package>`);
+
+  // 5. ZIP 생성 및 다운로드
+  zip.generateAsync({ type: "blob" }).then(blob => {
+    saveAs(blob, `${title}.epub`);
+  });
+}
+function deleteEntry(index) {
+  const data = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+  data.splice(index, 1);
+  localStorage.setItem("savedTitles", JSON.stringify(data));
+  updateTitleList();
+}
+
+function editEntry(index) {
+  const data = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+  if (data[index]) {
+    title.value = data[index].title;
+    editor.value = data[index].content;
+    updateCounts();
+  }
+}
+
+    function downloadFullEPUB() {
+      const saved = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+      if (!saved.length) return alert("저장된 글이 없습니다.");
+      const zip = new JSZip();
+      zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+      zip.folder("META-INF").file("container.xml", `<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+      const manifest = [], spine = [];
+      saved.forEach((item, i) => {
+        zip.folder("OEBPS").file(`chapter${i + 1}.xhtml`, `<?xml version='1.0' encoding='UTF-8'?><html xmlns='http://www.w3.org/1999/xhtml'><head><title>${item.title}</title></head><body><h1>${item.title}</h1><p>${item.content.replace(/\n/g, "<br/>")}</p></body></html>`);
+        manifest.push(`<item id="chap${i + 1}" href="chapter${i + 1}.xhtml" media-type="application/xhtml+xml"/>`);
+        spine.push(`<itemref idref="chap${i + 1}"/>`);
+      });
+      zip.folder("OEBPS").file("content.opf", `<?xml version='1.0' encoding='UTF-8'?><package version='2.0' xmlns='http://www.idpf.org/2007/opf' unique-identifier='bookid'><metadata xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>ZITDA 전체 글책</dc:title><dc:language>ko</dc:language><dc:identifier id='bookid'>id-${Date.now()}</dc:identifier></metadata><manifest>${manifest.join("\n")}</manifest><spine>${spine.join("\n")}</spine></package>`);
+      zip.generateAsync({ type: "blob" }).then(blob => saveAs(blob, "전체_글책.epub"));
+    }
+
+    async function runAI(type) {
+      const promptMap = {
+        '아이디어': `이 글의 아이디어를 확장해줘:
+
+"${editor.value}"`,
+        '주제': `이 글의 주제를 더 넓게 확장할 방법을 제안해줘:
+
+"${editor.value}"`,
+        '맞춤법': `다음 글의 맞춤법을 검사해줘:
+
+"${editor.value}"`,
+        '문제점': `다음 글의 문장 흐름이나 논리적 문제점을 지적해줘:
+
+"${editor.value}"`
+      };
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer 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`
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [{ role: "user", content: promptMap[type] }],
+          max_tokens: 800
+        }),
+      });
+      const data = await response.json();
+      document.getElementById("aiOutput").innerText = data.choices?.[0]?.message?.content || "AI 응답을 불러오지 못했습니다.";
+    }
+
+    window.onload = () => {
+      const draft = JSON.parse(localStorage.getItem("draft") || "null");
+      if (draft) {
+        title.value = draft.title || "";
+        editor.value = draft.content || "";
+        updateCounts();
+      }
+      updateTitleList();
+    };
+  </script>
+<!-- 📌 이 위치가 적절합니다 -->
+<script src="https://unpkg.com/docx@8.0.0/build/index.js"></script>
+<script>
+  async function downloadAsDocx() {
+    const { Document, Packer, Paragraph, TextRun } = window.docx;
+
+    const saved = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+    if (!saved.length) return alert("저장된 글이 없습니다.");
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: saved.map(item => [
+          new Paragraph({
+            children: [new TextRun({ text: "제목: " + item.title, bold: true, size: 28 })],
+            spacing: { after: 200 }
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: item.content, size: 24 })]
+          }),
+          new Paragraph({})
+        ]).flat()
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "전체_글책.docx";
+    a.click();
+  }
+</script>
+async function downloadSingleDocx(title, content) {
+  const { Document, Packer, Paragraph, TextRun } = window.docx;
+
+  const paragraphs = content
+    .split(/\r?\n+/)  // 줄바꿈 기준으로 나눔
+    .filter(line => line.trim() !== "")
+    .map(line =>
+      new Paragraph({
+        children: [new TextRun({ text: line, size: 24 })]
+      })
+    );
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({
+          children: [new TextRun({ text: "제목: " + title, bold: true, size: 28 })],
+          spacing: { after: 200 }
+        }),
+        ...paragraphs
+      ]
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = title + ".docx";
+  a.click();
+}
+
+</body> <!-- 📌 이 줄 바로 위에 삽입하세요 -->
+<script>
+  async function downloadAsDocx() {
+    const { Document, Packer, Paragraph, TextRun } = window.docx;
+
+    const saved = JSON.parse(localStorage.getItem("savedTitles") || "[]");
+    if (!saved.length) return alert("저장된 글이 없습니다.");
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: saved.flatMap(item => {
+          const titleParagraph = new Paragraph({
+            children: [new TextRun({ text: "제목: " + item.title, bold: true, size: 28 })],
+            spacing: { after: 200 }
+          });
+
+          const contentParagraphs = item.content
+            .split(/\r?\n+/)
+            .filter(line => line.trim() !== "")
+            .map(line =>
+              new Paragraph({
+                children: [new TextRun({ text: line, size: 24 })]
+              })
+            );
+
+          return [titleParagraph, ...contentParagraphs, new Paragraph({})]; // 마지막은 공백 줄
+        })
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "전체_글책.docx";
+    a.click();
+  }
+</script>
+</body>
+</html>
+
